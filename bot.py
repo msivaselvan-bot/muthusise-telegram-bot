@@ -60,7 +60,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# வாடிக்கையாளரைத் தேடுதல் (சரியான கிளை வாடிக்கையாளர்களை மட்டும் காட்டுவது)
+# வாடிக்கையாளரைத் தேடுதல்
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -96,7 +96,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
-# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் Fast2SMS DLT முறைப்படி OTP அனுப்புவது
+# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் DLT முறையில் SMS அனுப்புவது
 async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -120,12 +120,10 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-  # Fast2SMS DLT முறை மூலம் OTP அனுப்புவது
+    # Fast2SMS DLT முறை மூலம் SMS அனுப்புவது
     mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
-        
-        # DLT முறையின் சரியான வடிவம் (variables_values-ல் மட்டும் OTP-ஐ அனுப்ப வேண்டும்)
         payload = {
             "route": "dlt",
             "sender_id": "MTHSEG",
