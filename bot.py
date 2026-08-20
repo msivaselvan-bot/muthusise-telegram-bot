@@ -120,26 +120,29 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-   # Fast2SMS Quick Route முறை மூலம் SMS அனுப்புவது (Template தேவையில்லை)
+ # Fast2SMS மூலம் OTP அனுப்புவது (GET Method & Query Parameters)
     mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
         
-        # Quick Route (route="q") பயன்படுத்துவதால் Template ID, Entity ID தேவையில்லை
-        payload = {
-            "route": "q",
-            "message": f"Muthusise Gold OTP: {otp}. Do not share this with anyone.",
-            "numbers": mobile,
+        # நீங்கள் உறுதிப்படுத்திய சரியான Parameters வடிவம்
+        querystring = {
+            "authorization": FAST2SMS_API_KEY,
+            "route": "dlt",
+            "sender_id": "MTHSEG",
+            "message": "219823",            # உங்களது Template ID (Message ID)
+            "variables_values": f"{otp}|",   # OTP மாறி மதிப்பு
+            "numbers": mobile
         }
+        
         headers = {
-            'authorization': FAST2SMS_API_KEY,
-            'cache-control': "no-cache",
-            'content-type': "application/json"
+            'cache-control': "no-cache"
         }
+        
         try:
-            print(f"Sending Quick SMS to {mobile} with OTP {otp}...")
-            response = requests.post(url, json=payload, headers=headers)
-            print("Fast2SMS Quick Response:", response.text)
+            print(f"Sending GET SMS to {mobile} with OTP {otp}...")
+            response = requests.get(url, params=querystring, headers=headers)
+            print("Fast2SMS Response:", response.text)
         except Exception as e:
             print(f"SMS Error: {e}")
 
