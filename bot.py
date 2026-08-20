@@ -27,13 +27,13 @@ CUSTOMERS_DB = [
         "Branch": "Nagercoil",
         "Customer No": "CUST001",
         "Full Name": "Kumar",
-        "Mobile No": "9840098400",
+        "Mobile No": "9952452094",
     },
     {
         "Branch": "Thingalnagar",
         "Customer No": "CUST002",
         "Full Name": "Selvam",
-        "Mobile No": "9850098500",
+        "Mobile No": "7810004040",
     }
 ]
 
