@@ -120,7 +120,7 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-    # உங்கள் DLT விவரங்களுடன் Fast2SMS அனுப்புதல்
+   # Fast2SMS மூலம் OTP அனுப்புவது
     mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
@@ -129,20 +129,20 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "route": "dlt",
             "sender_id": "MTHSEG",
             "template_id": "1707174401529856506",
-            "message": otp,  # டெம்ப்ளேட்டில் உள்ள மாறிலிக்கு OTP செல்வதற்காக
+            "message": otp,
             "variables_values": otp,
             "numbers": mobile,
             "entity_id": "1701173150196736946"
         }
         headers = {
-            'cache-control': "no-cache",
-            'content-type': "application/json"
+            'cache-control': "no-cache"
         }
         try:
-            response = requests.post(url, json=payload, headers=headers)
-            print("Fast2SMS Response:", response.text) # Render Logs-ல் பார்க்க
+            # json=payload என்பதற்கு பதிலாக data=payload மற்றும் headers-ஐப் பயன்படுத்துதல்
+            response = requests.post(url, data=payload, headers=headers)
+            print("Fast2SMS Raw Response:", response.text) # இது ரெண்டர் லாக்கில் தெரியும்
         except Exception as e:
-            print(f"SMS Error: {e}")
+            print(f"SMS Error Exception: {e}")
 
     context.user_data["step"] = "verify_initial_otp"
     
