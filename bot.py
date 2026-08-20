@@ -13,17 +13,20 @@ from telegram.ext import (
     filters,
 )
 
+# Logging setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
+# Environment Variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY")
 
-# Google Apps Script Web App URL (இது உங்கள் ஷீட்டில் பரிவர்த்தனைகளைப் பதிவு செய்ய உதவும்)
-GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwFkhiOZwM4ONNyEEPtqI9TJq7luf_fyWBQoSnCUfnmzyyv3yVkGVf6XZMZTCfXIqex/exec"
+# புதிய Google Apps Script Web App URL
+GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbyLFfJfVJ4yfJo4WnOfxJAZLbcPPTnxVTOxcjX1-W9uzqanPF99fhhHoFQJOKGYEk7Z/exec"
 
 # தலைமை அலுவலக (Head Office) Telegram User ID
 HEAD_OFFICE_CHAT_ID = "1889072007"
 
+# பரிவர்த்தனை வகைகள்
 CASH_OUT_TYPES = [
     "GOLD LOAN", "FD Interest", "RD Interest", "FD Closure", 
     "RD Closure", "GP", "Cash Transfer"
@@ -43,12 +46,12 @@ def get_data_from_sheet():
         print(f"Error fetching from Google Sheets: {e}")
     return {"customers": [], "staff_map": {}}
 
+# /start கட்டளை
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
     staff_map = data.get("staff_map", {})
     
-    # தலைமை அலுவலகத்திற்கும் /start அனுமதி அளிக்கலாம்
     if user_id not in staff_map and user_id != HEAD_OFFICE_CHAT_ID:
         await update.message.reply_text("மன்னிக்கவும், இந்த பாட்டைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.")
         return
@@ -65,6 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# வாடிக்கையாளரைத் தேடுதல்
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -99,6 +103,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
+# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் Cash In / Cash Out பிரிவுகளைக் காட்டுவது
 async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -131,6 +136,7 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# பிரிவைத் தேர்ந்தெடுத்ததும் அந்தந்த பரிவர்த்தனைகளைக் காட்டுவது
 async def category_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -148,6 +154,7 @@ async def category_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text("சரியான பரிவர்த்தனை வகைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
+# பரிவர்த்தனை தேர்வு செய்யப்பட்டதும் Ref No கேட்பது
 async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -161,6 +168,7 @@ async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYP
         "தயவுசெய்து **பரிவர்த்தனை குறிப்பு எண்ணை (Transaction Reference Number)** அனுப்பவும்:"
     )
 
+# டெக்ஸ்ட் உள்ளீடுகளைக் கையாளுதல் (Ref No -> Staff Name -> Amount -> OTP SMS)
 async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -227,13 +235,13 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
             staff = context.user_data.get("staff_name")
             branch = staff_map[user_id]
 
-            # ஆட்டோ ரசீது எண் (Auto Receipt Number) உருவாக்குவது (எ.கா: NGR-20260821-1045)
+            # ஆட்டோ ரசீது எண் (Auto Receipt Number) உருவாக்குவது
             branch_code = branch[:3].upper()
             time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
             auto_receipt_no = f"{branch_code}-{time_str}"
             context.user_data["receipt_no"] = auto_receipt_no
 
-            # கிளைக்கும் வாடிக்கையாளருக்கும் ரசீது எண் காட்டுவது
+            # கிளைப் பணியாளருக்கு ரசீது எண் காட்டுவது
             await update.message.reply_text(
                 "✅ *OTP வெற்றிகரமாக உறுதிப்படுத்தப்பட்டது!*\n\n"
                 f"🏷️ **ஆட்டோ ரசீது எண்:** `{auto_receipt_no}`\n"
@@ -254,18 +262,17 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"📑 **வகை:** {txn}\n"
                 f"💰 **தொகை:** ₹{amount}\n"
                 f"🔖 **குறிப்பு எண்:** {ref_no}\n"
-                f"👨‍💼 **பணியாளர்:** {staff}\n"
+                f"👨‍💼 **பணியாளர்:** {staff}"
             )
 
             keyboard = [
                 [
-                    InlineKeyboardButton("✅ Approve (ஒப்புதல் அளி)", callback_data=f"app_{auto_receipt_no}"),
+                    InlineKeyboardButton("✅ Approve (ஒப்புதல் அளி)", callback_data=f"app_{auto_receipt_no}_{branch}_{cust.get('Customer No')}_{cust.get('Full Name')}_{txn}_{amount}_{ref_no}_{staff}"),
                     InlineKeyboardButton("❌ Reject (நிராகரி)", callback_data=f"rej_{auto_receipt_no}")
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # தலைமை அலுவலக போட் சாட்டுக்கு அனுப்புவது
             await context.bot.send_message(
                 chat_id=HEAD_OFFICE_CHAT_ID,
                 text=ho_message,
@@ -288,12 +295,38 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     receipt_no = data_parts[1]
 
     if action == "app":
+        # ஷீட்டிற்குத் தேவையான விவரங்களைப் பிரித்தெடுத்தல்
+        if len(data_parts) >= 9:
+            branch = data_parts[2]
+            cust_no = data_parts[3]
+            cust_name = data_parts[4]
+            txn_type = data_parts[5]
+            amount = data_parts[6]
+            ref_no = data_parts[7]
+            staff_name = data_parts[8]
+
+            payload = {
+                "action": "save_transaction",
+                "receipt_no": receipt_no,
+                "branch": branch,
+                "customer_no": cust_no,
+                "customer_name": cust_name,
+                "txn_type": txn_type,
+                "amount": amount,
+                "ref_no": ref_no,
+                "staff_name": staff_name
+            }
+            
+            try:
+                requests.post(GOOGLE_SHEET_API_URL, json=payload)
+            except Exception as e:
+                print(f"Sheet Save Error: {e}")
+
         await query.edit_message_text(
             f"{query.message.text}\n\n"
-            "🟢 **நிலை:** தலைமை அலுவலகத்தால் **ஒப்புதல் அளிக்கப்பட்டது (Approved)** ✅",
+            "🟢 **நிலை:** தலைமை அலுவலகத்தால் **ஒப்புதல் அளிக்கப்பட்டது (Approved)** மற்றும் கூகுள் ஷீட்டில் பதிவானது ✅",
             parse_mode="Markdown"
         )
-        # இங்கே கூகுள் ஷீட்டில் தரவை சேமிக்கும் API கால் கொடுக்கலாம்
     else:
         await query.edit_message_text(
             f"{query.message.text}\n\n"
