@@ -60,7 +60,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# வாடிக்கையாளரைத் தேடுதல்
+# வாடிக்கையாளரைத் தேடுதல் (சரியான கிளை வாடிக்கையாளர்களை மட்டும் காட்டுவது)
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -96,7 +96,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
-# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் உங்கள் DLT முறைப்படி OTP அனுப்புவது
+# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் Fast2SMS DLT முறைப்படி OTP அனுப்புவது
 async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -120,12 +120,10 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-  # Fast2SMS மூலம் OTP அனுப்புவது
+    # Fast2SMS மூலம் OTP அனுப்புவது (Authorization Header முறை)
     mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
-        
-        # Payload-ல் 'authorization' இருக்கக்கூடாது
         payload = {
             "route": "dlt",
             "sender_id": "MTHSEG",
@@ -135,14 +133,11 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "numbers": mobile,
             "entity_id": "1701173150196736946"
         }
-        
-        # Authorization Key-ஐ Header-ல் அனுப்ப வேண்டும்
         headers = {
             'authorization': FAST2SMS_API_KEY,
             'cache-control': "no-cache",
             'content-type': "application/json"
         }
-        
         try:
             response = requests.post(url, json=payload, headers=headers)
             print("Fast2SMS Response:", response.text)
