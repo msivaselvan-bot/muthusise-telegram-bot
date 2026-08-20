@@ -120,12 +120,10 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-   # Fast2SMS மூலம் OTP அனுப்புவது
+  # Fast2SMS மூலம் OTP அனுப்புவது
     mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
-        
-        # DLT-க்குப் பதிலாக 'otp' ரூட்டைப் பயன்படுத்துவது (அல்லது உங்களது ஒரிஜினல் கோடு)
         payload = {
             "route": "otp",
             "variables_values": otp,
@@ -137,10 +135,11 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'content-type': "application/json"
         }
         try:
+            print(f"Sending SMS to {mobile} with OTP {otp}...") # இதைச் சேர்த்தால் லாக்கில் தெரியும்
             response = requests.post(url, json=payload, headers=headers)
-            print("Fast2SMS Response:", response.text)
+            print("Fast2SMS Full Response:", response.status_code, response.text)
         except Exception as e:
-            print(f"SMS Error: {e}")
+            print(f"SMS Exception Error: {e}")
 
     context.user_data["step"] = "verify_initial_otp"
     
