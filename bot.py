@@ -19,15 +19,8 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY")
 
-# Google Apps Script Web App URL (உங்கள் கூகுள் ஷீட் URL)
-GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwIFZq71xI8Gnhm6ZHUe5ZfLkY7u-vd2L1X99VcnU2QvQdrbyExNKWLvOX7OgRFo1w/exec"
-
-# பணியாளர் எந்தக் கிளை என்பதை வரையறுக்க (Telegram User ID: Branch Name)
-# உங்களது உண்மையான Telegram User ID-களை இங்கே சேர்க்கவும்
-STAFF_BRANCH_MAP = {
-    123456789: "Nagercoil",     # உதாரணம் (உங்கள் ID-ஐ மாற்றவும்)
-    987654321: "Thingalnagar",  # உதாரணம் (உங்கள் ID-ஐ மாற்றவும்)
-}
+# புதிய Google Apps Script Web App URL
+GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwFkhiOZwM4ONNyEEPtqI9TJq7luf_fyWBQoSnCUfnmzyyv3yVkGVf6XZMZTCfXIqex/exec"
 
 # பரிவர்த்தனை வகைகள்
 CASH_OUT_TYPES = [
@@ -40,24 +33,27 @@ CASH_IN_TYPES = [
     "GS", "Cash Received", "New RD", "New FD", "RD Due"
 ]
 
-# Google Sheet-லிருந்து வாடிக்கையாளர் தரவைப் பெறுவது
-def get_customers_from_sheet():
+# கூகுள் ஷீட்டிலிருந்து வாடிக்கையாளர் மற்றும் பணியாளர் விவரங்களைப் பெறுவது
+def get_data_from_sheet():
     try:
         response = requests.get(GOOGLE_SHEET_API_URL)
         if response.status_code == 200:
             return response.json()
     except Exception as e:
         print(f"Error fetching from Google Sheets: {e}")
-    return []
+    return {"customers": [], "staff_map": {}}
 
 # /start கட்டளை
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in STAFF_BRANCH_MAP:
+    user_id = str(update.effective_user.id)
+    data = get_data_from_sheet()
+    staff_map = data.get("staff_map", {})
+    
+    if user_id not in staff_map:
         await update.message.reply_text("மன்னிக்கவும், இந்த பாட்டைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.")
         return
     
-    branch = STAFF_BRANCH_MAP[user_id]
+    branch = staff_map[user_id]
     context.user_data.clear()
     await update.message.reply_text(
         f"வணக்கம்! உங்கள் கிளை: *{branch}*.\n\n"
@@ -67,20 +63,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # வாடிக்கையாளரைத் தேடுதல் (Search Customer by Name & Branch)
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in STAFF_BRANCH_MAP:
+    user_id = str(update.effective_user.id)
+    data = get_data_from_sheet()
+    staff_map = data.get("staff_map", {})
+
+    if user_id not in staff_map:
         return
 
-    # ஒருவேளை ஏற்கனவே பரிவர்த்தனை நடந்து கொண்டிருந்தால் டெக்ஸ்ட் இன்ஸ்டுக்களுக்கு வழிவிடுவது
+    # ஒருவேளை ஏற்கனவே பரிவர்த்தனை நடந்து கொண்டிருந்தால் டெக்ஸ்ட் உள்ளீடுகளுக்கு வழிவிடுவது
     if context.user_data.get("step"):
         await handle_text_inputs(update, context)
         return
 
-    branch = STAFF_BRANCH_MAP[user_id]
+    branch = staff_map[user_id]
     query_text = update.message.text.strip().lower()
 
-    # கூகுள் ஷீட்டிலிருந்து வாடிக்கையாளர் பட்டியலைப் பெறுதல்
-    customers_db = get_customers_from_sheet()
+    customers_db = data.get("customers", [])
 
     # குறிப்பிட்ட கிளை வாடிக்கையாளர்களை மட்டும் தேடுதல்
     matched_customers = [
@@ -109,7 +107,8 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     cust_no = query.data.split("_")[1]
-    customers_db = get_customers_from_sheet()
+    data = get_data_from_sheet()
+    customers_db = data.get("customers", [])
     cust = next((c for c in customers_db if str(c.get("Customer No")) == cust_no), None)
 
     if not cust:
@@ -170,8 +169,11 @@ async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # டெக்ஸ்ட் உள்ளீடுகளைப் கையாளுதல் (Ref No -> Staff Name -> Amount -> OTP)
 async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in STAFF_BRANCH_MAP:
+    user_id = str(update.effective_user.id)
+    data = get_data_from_sheet()
+    staff_map = data.get("staff_map", {})
+
+    if user_id not in staff_map:
         return
 
     step = context.user_data.get("step")
@@ -207,7 +209,7 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
             amount = context.user_data.get("amount")
             ref_no = context.user_data.get("ref_no")
             staff = context.user_data.get("staff_name")
-            branch = STAFF_BRANCH_MAP[user_id]
+            branch = staff_map[user_id]
 
             # பரிவர்த்தனை வெற்றிகரமாக முடிந்தது
             await update.message.reply_text(
