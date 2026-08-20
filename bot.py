@@ -92,14 +92,13 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for cust in matched_customers:
         cust_no = str(cust.get("Customer No", ""))
         name = str(cust.get("Full Name", ""))
-        # கிளையின் பெயரையும் சேர்த்து பட்டத்தில் காட்டுவது குழப்பத்தைத் தவிர்க்கும்
         callback_data = f"cust_{cust_no}"
         keyboard.append([InlineKeyboardButton(f"{name} ({cust_no})", callback_data=callback_data)])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
-# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் OTP அனுப்பிவிட்டு, OTP உள்ளிடக் கேட்பது (பரிவர்த்தனைகளை உடனே காட்டாது)
+# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் OTP அனுப்பிவிட்டு, OTP உள்ளிடக் கேட்பது
 async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -130,7 +129,6 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mobile = str(cust.get("Mobile No", ""))
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
-    
         payload = {
             "authorization": FAST2SMS_API_KEY,
             "route": "otp",
@@ -143,7 +141,6 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"SMS Error: {e}")
 
-    # இப்போது பரிவர்த்தனை காட்டப்படாது. OTP ஐ உள்ளிட மட்டுமே கேட்க வேண்டும்.
     context.user_data["step"] = "verify_initial_otp"
     
     await query.edit_message_text(
@@ -153,7 +150,7 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# டெக்ஸ்ட் உள்ளீடுகளைக் கையாளுதல் (முதலில் OTP சரிபார்ப்பு -> பின் பரிவர்த்தனை வகை -> Ref No -> Staff Name -> Amount)
+# டெக்ஸ்ட் உள்ளீடுகளைக் கையாளுதல்
 async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -171,7 +168,6 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
         correct_otp = context.user_data.get("generated_otp")
 
         if entered_otp == correct_otp:
-            # OTP சரியான பிறகுதான் பரிவர்த்தனை மெனுவைக் காட்ட வேண்டும்
             context.user_data["step"] = "select_transaction"
             
             keyboard = []
@@ -207,7 +203,6 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
         staff = context.user_data.get("staff_name")
         branch = staff_map[user_id]
 
-        # அனைத்து விவரங்களும் பெற்று பரிவர்த்தனை வெற்றிகரமாக முடிதல்
         await update.message.reply_text(
             "✅ *பரிவர்த்தனை வெற்றிகரமாக பதிவு செய்யப்பட்டது!*\n\n"
             f"கிளை: {branch}\n"
@@ -219,7 +214,6 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
             parse_mode="Markdown"
         )
         
-        # டேட்டாவை கிளியர் செய்தல் புதிய பரிவர்த்தனைக்கு
         context.user_data.clear()
         await update.message.reply_text("அடுத்த பரிவர்த்தனைக்கு வாடிக்கையாளர் பெயரின் சில எழுத்துகளைத் தேடவும்.")
 
@@ -230,8 +224,6 @@ async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYP
 
     txn_type = query.data.replace("txn_", "")
     context.user_data["selected_txn"] = txn_type
-
-    # பரிவர்த்தனை தேர்ந்தெடுக்கப்பட்டதும் Ref No கேட்க வேண்டும்
     context.user_data["step"] = "get_ref_no"
 
     await query.edit_message_text(
@@ -251,5 +243,5 @@ def main():
     print("Bot is running...")
     app.run_polling()
 
-if __name__ ==- "__main__":
+if __name__ == "__main__":
     main()
