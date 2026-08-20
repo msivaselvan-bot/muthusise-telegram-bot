@@ -19,29 +19,14 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY")
 
-# தற்காலிக டேட்டா சேமிப்பு (Production-ல் Database அல்லது Google Sheets பயன்படுத்தலாம்)
-# CSV/Google Sheets இலிருந்து டேட்டாவை இங்கே லோட் செய்து கொள்ளலாம்.
-# உதாரண வாடிக்கையாளர் தரவு:
-CUSTOMERS_DB = [
-    {
-        "Branch": "Nagercoil",
-        "Customer No": "CUST001",
-        "Full Name": "Kumar",
-        "Mobile No": "9952452094",
-    },
-    {
-        "Branch": "Thingalnagar",
-        "Customer No": "CUST002",
-        "Full Name": "Selvam",
-        "Mobile No": "7810004040",
-    }
-]
+# Google Apps Script Web App URL (உங்கள் கூகுள் ஷீட் URL)
+GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwIFZq71xI8Gnhm6ZHUe5ZfLkY7u-vd2L1X99VcnU2QvQdrbyExNKWLvOX7OgRFo1w/exec"
 
-# பணியாளர் எந்தக் கிளை என்பதை வரையறுக்க (Telegram User ID மூலம்)
+# பணியாளர் எந்தக் கிளை என்பதை வரையறுக்க (Telegram User ID: Branch Name)
+# உங்களது உண்மையான Telegram User ID-களை இங்கே சேர்க்கவும்
 STAFF_BRANCH_MAP = {
-    # Telegram_User_ID: "Branch_Name"
-    1889072007: "Nagercoil",
-    1570175899: "Thingalnagar"
+    123456789: "Nagercoil",     # உதாரணம் (உங்கள் ID-ஐ மாற்றவும்)
+    987654321: "Thingalnagar",  # உதாரணம் (உங்கள் ID-ஐ மாற்றவும்)
 }
 
 # பரிவர்த்தனை வகைகள்
@@ -55,44 +40,65 @@ CASH_IN_TYPES = [
     "GS", "Cash Received", "New RD", "New FD", "RD Due"
 ]
 
+# Google Sheet-லிருந்து வாடிக்கையாளர் தரவைப் பெறுவது
+def get_customers_from_sheet():
+    try:
+        response = requests.get(GOOGLE_SHEET_API_URL)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"Error fetching from Google Sheets: {e}")
+    return []
+
 # /start கட்டளை
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in STAFF_BRANCH_MAP:
-        await update.message.reply_text("மன்னிக்கவும், உங்களுக்கு இந்த பாட்டைப் பயன்படுத்த அனுமதி இல்லை.")
+        await update.message.reply_text("மன்னிக்கவும், இந்த பாட்டைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.")
         return
     
     branch = STAFF_BRANCH_MAP[user_id]
+    context.user_data.clear()
     await update.message.reply_text(
-        f"வணக்கம்! உங்கள் கிளை: *{branch}*.\n"
-        "வாடிக்கையாளரைத் தேட வாடிக்கையாளரின் பெயரின் சில எழுத்துகளை அனுப்பவும் (எ.கா: `Kumar`).",
+        f"வணக்கம்! உங்கள் கிளை: *{branch}*.\n\n"
+        "வாடிக்கையாளரைத் தேட அவரது பெயரின் சில எழுத்துகளைத் தட்டச்சு செய்து அனுப்பவும் (எ.கா: `Kumar`).",
         parse_mode="Markdown"
     )
 
-# வாடிக்கையாளரைத் தேடுதல் (Search Customer by Name)
+# வாடிக்கையாளரைத் தேடுதல் (Search Customer by Name & Branch)
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in STAFF_BRANCH_MAP:
         return
 
+    # ஒருவேளை ஏற்கனவே பரிவர்த்தனை நடந்து கொண்டிருந்தால் டெக்ஸ்ட் இன்ஸ்டுக்களுக்கு வழிவிடுவது
+    if context.user_data.get("step"):
+        await handle_text_inputs(update, context)
+        return
+
     branch = STAFF_BRANCH_MAP[user_id]
     query_text = update.message.text.strip().lower()
 
+    # கூகுள் ஷீட்டிலிருந்து வாடிக்கையாளர் பட்டியலைப் பெறுதல்
+    customers_db = get_customers_from_sheet()
+
     # குறிப்பிட்ட கிளை வாடிக்கையாளர்களை மட்டும் தேடுதல்
     matched_customers = [
-        c for c in CUSTOMERS_DB 
-        if c["Branch"].lower() == branch.lower() and query_text in c["Full Name"].lower()
+        c for c in customers_db 
+        if str(c.get("Branch", "")).strip().lower() == branch.lower() and query_text in str(c.get("Full Name", "")).strip().lower()
     ]
 
     if not matched_customers:
-        await update.message.reply_text("உங்கள் கிளையில் இந்த பெயரில் வாடிக்கையாளர் இல்லை.")
+        await update.message.reply_text("உங்கள் கிளையில் இந்த பெயரில் வாடிக்கையாளர் இல்லை. மீண்டும் சரியாகத் தேடவும்.")
         return
 
     # பட்டங்களாக வாடிக்கையாளர்களைக் காட்டுதல்
     keyboard = []
     for cust in matched_customers:
-        callback_data = f"cust_{cust['Customer No']}"
-        keyboard.append([InlineKeyboardButton(f"{cust['Full Name']} ({cust['Customer No']})", callback_data=callback_data)])
+        cust_no = str(cust.get("Customer No", ""))
+        name = str(cust.get("Full Name", ""))
+        callback_data = f"cust_{cust_no}"
+        keyboard.append([InlineKeyboardButton(f"{name} ({cust_no})", callback_data=callback_data)])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
@@ -103,7 +109,8 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     cust_no = query.data.split("_")[1]
-    cust = next((c for c in CUSTOMERS_DB if c["Customer No"] == cust_no), None)
+    customers_db = get_customers_from_sheet()
+    cust = next((c for c in customers_db if str(c.get("Customer No")) == cust_no), None)
 
     if not cust:
         await query.edit_message_text("பிழை: வாடிக்கையாளர் விவரங்கள் கிடைக்கவில்லை.")
@@ -117,24 +124,20 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["generated_otp"] = otp
 
     # Fast2SMS மூலம் OTP அனுப்புவது
-    mobile = cust["Mobile No"]
-    url = "https://www.fast2sms.com/dev/bulkV2"
-    payload = {
-        "authorization": FAST2SMS_API_KEY,
-        "route": "otp",
-        "variables_values": otp,
-        "numbers": mobile,
-    }
-    headers = {'cache-control': "no-cache"}
-
-    try:
-        response = requests.post(url, data=payload, headers=headers)
-        res_data = response.json()
-        if not res_data.get("return"):
-            # டெஸ்டிங்கிற்காக லோக்கலில் ஒர்க்காகவில்லை என்றாலும் தொடரலாம்
-            pass
-    except Exception as e:
-        print(f"SMS Error: {e}")
+    mobile = str(cust.get("Mobile No", ""))
+    if mobile:
+        url = "https://www.fast2sms.com/dev/bulkV2"
+        payload = {
+            "authorization": FAST2SMS_API_KEY,
+            "route": "otp",
+            "variables_values": otp,
+            "numbers": mobile,
+        }
+        headers = {'cache-control': "no-cache"}
+        try:
+            requests.post(url, data=payload, headers=headers)
+        except Exception as e:
+            print(f"SMS Error: {e}")
 
     # பரிவர்த்தனை வகைகளைக் காட்டுவது (Cash In / Cash Out Menu)
     keyboard = []
@@ -144,7 +147,7 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        f"வாடிக்கையாளர்: *{cust['Full Name']}* தேர்வு செய்யப்பட்டுள்ளார்.\n"
+        f"வாடிக்கையாளர்: *{cust.get('Full Name')}* தேர்வு செய்யப்பட்டுள்ளார்.\n"
         f"அவரது பதிவு செய்யப்பட்ட எண்ணிற்கு ({mobile}) OTP அனுப்பப்பட்டுள்ளது.\n\n"
         "கீழ்கண்ட பரிவர்த்தனை வகைத் தேர்வு செய்யவும்:",
         reply_markup=reply_markup,
@@ -165,7 +168,7 @@ async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     context.user_data["step"] = "get_ref_no"
 
-# டெக்ஸ்ட் உள்ளீடுகளைக் கையாளுதல் (Ref No, Staff Name, Amount, OTP)
+# டெக்ஸ்ட் உள்ளீடுகளைப் கையாளுதல் (Ref No -> Staff Name -> Amount -> OTP)
 async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in STAFF_BRANCH_MAP:
@@ -190,7 +193,7 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             f"அனைத்து விவரங்களும் பெறப்பட்டன.\n"
             f"பரிவர்த்தனை: {context.user_data.get('selected_txn')}\n"
-            f"தொகை: {text}\n\n"
+            f"தொகை: ₹{text}\n\n"
             "வாடிக்கையாளரிடம் பெற்ற **OTP-ஐ** உள்ளிடவும்:"
         )
 
@@ -210,19 +213,19 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text(
                 "✅ *பரிவர்த்தனை வெற்றிகரமாக உறுதிப்படுத்தப்பட்டது!*\n\n"
                 f"கிளை: {branch}\n"
-                f"வாடிக்கையாளர்: {cust['Full Name']} ({cust['Customer No']})\n"
+                f"வாடிக்கையாளர்: {cust.get('Full Name')} ({cust.get('Customer No')})\n"
                 f"வகை: {txn}\n"
                 f"குறிப்பு எண்: {ref_no}\n"
                 f"பொறுப்பு பணியாளர்: {staff}\n"
                 f"தொகை: ₹{amount}",
                 parse_mode="Markdown"
             )
-            # இங்கு டேட்டாபேஸ் அல்லது Google Sheets-ல் டேட்டாவை சேமிக்கும் கோடை சேர்த்துக்கொள்ளலாம்.
             
-            # டேட்டாவை கிளியர் செய்தல்
+            # டேட்டாவை கிளியர் செய்தல் புதிய பரிவர்த்தனைக்கு
             context.user_data.clear()
+            await update.message.reply_text("அடுத்த பரிவர்த்தனைக்கு வாடிக்கையாளர் பெயரின் சில எழுத்துகளைத் தேடவும்.")
         else:
-            await update.message.reply_text("❌ தவறான OTP! மீண்டும் சரியான OTP-ஐ உள்ளிடவும் அல்லது பரிவர்த்தனையை மீளமைக்கவும்.")
+            await update.message.reply_text("❌ தவறான OTP! மீண்டும் சரியான OTP-ஐ உள்ளிடவும்.")
 
 # மெயின் ஆப் இயக்க முறை
 def main():
@@ -231,8 +234,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(customer_selected, pattern="^cust_"))
     app.add_handler(CallbackQueryHandler(transaction_selected, pattern="^txn_"))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), search_customer)) # வாடிக்கையாளர் தேடலுக்கு
-    # குறிப்பு: நடைமுறையில் ஸ்டெப் வாரியாக ஹேண்டில் செய்ய தனித்தனி கண்டிஷன்கள் தேவைப்படும்.
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), search_customer))
 
     print("Bot is running...")
     app.run_polling()
