@@ -40,8 +40,8 @@ CUSTOMERS_DB = [
 # பணியாளர் எந்தக் கிளை என்பதை வரையறுக்க (Telegram User ID மூலம்)
 STAFF_BRANCH_MAP = {
     # Telegram_User_ID: "Branch_Name"
-    123456789: "Nagercoil",
-    987654321: "Thingalnagar"
+    1889072007: "Nagercoil",
+    1570175899: "Thingalnagar"
 }
 
 # பரிவர்த்தனை வகைகள்
