@@ -2,6 +2,7 @@ import os
 import random
 import logging
 import requests
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,17 +13,17 @@ from telegram.ext import (
     filters,
 )
 
-# Logging setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# Environment Variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY")
 
-# Google Apps Script Web App URL
+# Google Apps Script Web App URL (இது உங்கள் ஷீட்டில் பரிவர்த்தனைகளைப் பதிவு செய்ய உதவும்)
 GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbwFkhiOZwM4ONNyEEPtqI9TJq7luf_fyWBQoSnCUfnmzyyv3yVkGVf6XZMZTCfXIqex/exec"
 
-# பரிவர்த்தனை வகைகள்
+# தலைமை அலுவலக (Head Office) Telegram User ID
+HEAD_OFFICE_CHAT_ID = "1889072007"
+
 CASH_OUT_TYPES = [
     "GOLD LOAN", "FD Interest", "RD Interest", "FD Closure", 
     "RD Closure", "GP", "Cash Transfer"
@@ -42,16 +43,20 @@ def get_data_from_sheet():
         print(f"Error fetching from Google Sheets: {e}")
     return {"customers": [], "staff_map": {}}
 
-# /start கட்டளை
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
     staff_map = data.get("staff_map", {})
     
-    if user_id not in staff_map:
+    # தலைமை அலுவலகத்திற்கும் /start அனுமதி அளிக்கலாம்
+    if user_id not in staff_map and user_id != HEAD_OFFICE_CHAT_ID:
         await update.message.reply_text("மன்னிக்கவும், இந்த பாட்டைப் பயன்படுத்த உங்களுக்கு அனுமதி இல்லை.")
         return
     
+    if user_id == HEAD_OFFICE_CHAT_ID:
+        await update.message.reply_text("வணக்கம் தலைமை அலுவலக மேலாளர்! கிளைகளிலிருந்து வரும் பரிவர்த்தனை ஒப்புதல்களுக்காக (Approvals) இந்த பாட் காத்திருக்கிறது.")
+        return
+
     branch = staff_map[user_id]
     context.user_data.clear()
     await update.message.reply_text(
@@ -60,7 +65,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# வாடிக்கையாளரைத் தேடுதல்
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -90,13 +94,11 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for cust in matched_customers:
         cust_no = str(cust.get("Customer No", ""))
         name = str(cust.get("Full Name", ""))
-        callback_data = f"cust_{cust_no}"
-        keyboard.append([InlineKeyboardButton(f"{name} ({cust_no})", callback_data=callback_data)])
+        keyboard.append([InlineKeyboardButton(f"{name} ({cust_no})", callback_data=f"cust_{cust_no}")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
-# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் DLT முறையில் SMS அனுப்புவது
 async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -116,112 +118,36 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["selected_customer"] = cust
 
-    # 4 இலக்க OTP உருவாக்குதல்
-    otp = str(random.randint(1000, 9999))
-    context.user_data["generated_otp"] = otp
+    keyboard = [
+        [InlineKeyboardButton("📥 Cash In (வரவு)", callback_data="cat_cashin")],
+        [InlineKeyboardButton("📤 Cash Out (செலவு)", callback_data="cat_cashout")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
- # Fast2SMS மூலம் OTP அனுப்புவது (GET Method & Query Parameters)
-    mobile = str(cust.get("Mobile No", "")).strip()
-    if mobile:
-        url = "https://www.fast2sms.com/dev/bulkV2"
-        
-        # நீங்கள் உறுதிப்படுத்திய சரியான Parameters வடிவம்
-        querystring = {
-            "authorization": FAST2SMS_API_KEY,
-            "route": "dlt",
-            "sender_id": "MTHSEG",
-            "message": "219823",            # உங்களது Template ID (Message ID)
-            "variables_values": f"{otp}|",   # OTP மாறி மதிப்பு
-            "numbers": mobile
-        }
-        
-        headers = {
-            'cache-control': "no-cache"
-        }
-        
-        try:
-            print(f"Sending GET SMS to {mobile} with OTP {otp}...")
-            response = requests.get(url, params=querystring, headers=headers)
-            print("Fast2SMS Response:", response.text)
-        except Exception as e:
-            print(f"SMS Error: {e}")
-
-    context.user_data["step"] = "verify_initial_otp"
-    
     await query.edit_message_text(
-        f"வாடிக்கையாளர்: *{cust.get('Full Name')}* ({cust.get('Customer No')}) தேர்வு செய்யப்பட்டுள்ளார்.\n"
-        f"அவரது பதிவு செய்யப்பட்ட எண்ணிற்கு ({mobile}) **OTP** அனுப்பப்பட்டுள்ளது.\n\n"
-        "பரிவர்த்தனையைத் தொடங்க வாடிக்கையாளரிடம் பெற்ற **OTP-ஐ** இங்கே உள்ளிடவும்:",
+        f"வாடிக்கையாளர்: *{cust.get('Full Name')}* ({cust.get('Customer No')}) தேர்வு செய்யப்பட்டுள்ளார்.\n\n"
+        "பரிவர்த்தனை வகையைத் தேர்ந்தெடுக்கவும்:",
+        reply_markup=reply_markup,
         parse_mode="Markdown"
     )
 
-# டெக்ஸ்ட் உள்ளீடுகளைக் கையாளுதல்
-async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data = get_data_from_sheet()
-    staff_map = data.get("staff_map", {})
+async def category_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-    if user_id not in staff_map:
-        return
+    cat_type = query.data.replace("cat_", "")
+    keyboard = []
 
-    step = context.user_data.get("step")
-    text = update.message.text.strip()
+    if cat_type == "cashin":
+        for txn in CASH_IN_TYPES:
+            keyboard.append([InlineKeyboardButton(txn, callback_data=f"txn_{txn}")])
+    else:
+        for txn in CASH_OUT_TYPES:
+            keyboard.append([InlineKeyboardButton(txn, callback_data=f"txn_{txn}")])
 
-    if step == "verify_initial_otp":
-        entered_otp = text
-        correct_otp = context.user_data.get("generated_otp")
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text("சரியான பரிவர்த்தனை வகைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
-        if entered_otp == correct_otp:
-            context.user_data["step"] = "select_transaction"
-            
-            keyboard = []
-            all_txns = CASH_OUT_TYPES + CASH_IN_TYPES
-            for txn in all_txns:
-                keyboard.append([InlineKeyboardButton(txn, callback_data=f"txn_{txn}")])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(
-                "✅ *OTP வெற்றிகரமாக உறுதிப்படுத்தப்பட்டது!*\n\n"
-                "இப்போது கீழ்கண்ட பரிவர்த்தனை வகைத் தேர்வு செய்யவும்:",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text("❌ தவறான OTP! சரியான OTP-ஐ மீண்டும் உள்ளிடவும்:")
-
-    elif step == "get_ref_no":
-        context.user_data["ref_no"] = text
-        context.user_data["step"] = "get_staff_name"
-        await update.message.reply_text("அடுத்து, **பரிவர்த்தனைக்குப் பொறுப்பான பணியாளர் பெயரை (Reference Staff Name)** உள்ளிடவும்:")
-
-    elif step == "get_staff_name":
-        context.user_data["staff_name"] = text
-        context.user_data["step"] = "get_amount"
-        await update.message.reply_text("அடுத்து, **தொகையை (Amount)** உள்ளிடவும்:")
-
-    elif step == "get_amount":
-        cust = context.user_data.get("selected_customer")
-        txn = context.user_data.get("selected_txn")
-        amount = text
-        ref_no = context.user_data.get("ref_no")
-        staff = context.user_data.get("staff_name")
-        branch = staff_map[user_id]
-
-        await update.message.reply_text(
-            "✅ *பரிவர்த்தனை வெற்றிகரமாக பதிவு செய்யப்பட்டது!*\n\n"
-            f"கிளை: {branch}\n"
-            f"வாடிக்கையாளர்: {cust.get('Full Name')} ({cust.get('Customer No')})\n"
-            f"வகை: {txn}\n"
-            f"குறிப்பு எண்: {ref_no}\n"
-            f"பொறுப்பு பணியாளர்: {staff}\n"
-            f"தொகை: ₹{amount}",
-            parse_mode="Markdown"
-        )
-        
-        context.user_data.clear()
-        await update.message.reply_text("அடுத்த பரிவர்த்தனைக்கு வாடிக்கையாளர் பெயரின் சில எழுத்துகளைத் தேடவும்.")
-
-# பரிவர்த்தனை வகை தேர்வு செய்யப்படும்போது
 async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -235,15 +161,157 @@ async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYP
         "தயவுசெய்து **பரிவர்த்தனை குறிப்பு எண்ணை (Transaction Reference Number)** அனுப்பவும்:"
     )
 
+async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    data = get_data_from_sheet()
+    staff_map = data.get("staff_map", {})
+
+    if user_id not in staff_map:
+        return
+
+    step = context.user_data.get("step")
+    text = update.message.text.strip()
+
+    if step == "get_ref_no":
+        context.user_data["ref_no"] = text
+        context.user_data["step"] = "get_staff_name"
+        await update.message.reply_text("அடுத்து, **பரிவர்த்தனைக்குப் பொறுப்பான பணியாளர் பெயரை (Reference Staff Name)** உள்ளிடவும்:")
+
+    elif step == "get_staff_name":
+        context.user_data["staff_name"] = text
+        context.user_data["step"] = "get_amount"
+        await update.message.reply_text("அடுத்து, **தொகையை (Amount)** உள்ளிடவும்:")
+
+    elif step == "get_amount":
+        context.user_data["amount"] = text
+        context.user_data["step"] = "verify_final_otp"
+
+        cust = context.user_data.get("selected_customer")
+        mobile = str(cust.get("Mobile No", "")).strip()
+        amount = text
+
+        otp = str(random.randint(1000, 9999))
+        context.user_data["generated_otp"] = otp
+
+        # Fast2SMS மூலம் OTP அனுப்புவது
+        if mobile:
+            url = "https://www.fast2sms.com/dev/bulkV2"
+            querystring = {
+                "authorization": FAST2SMS_API_KEY,
+                "route": "dlt",
+                "sender_id": "MTHSEG",
+                "message": "219823",
+                "variables_values": f"{amount}|{otp}|",
+                "numbers": mobile
+            }
+            try:
+                requests.get(url, params=querystring, headers={'cache-control': "no-cache"})
+            except Exception as e:
+                print(f"SMS Error: {e}")
+
+        await update.message.reply_text(
+            f"✅ அனைத்து விவரங்களும் பெறப்பட்டன!\n"
+            f"தொகை: ₹{amount} வாடிக்கையாளர் எண்ணிற்கு ({mobile}) OTP அனுப்பப்பட்டுள்ளது.\n\n"
+            "பரிவர்த்தனையை முடிக்க வாடிக்கையாளரிடம் பெற்ற **OTP-ஐ** உள்ளிடவும்:"
+        )
+
+    elif step == "verify_final_otp":
+        entered_otp = text
+        correct_otp = context.user_data.get("generated_otp")
+
+        if entered_otp == correct_otp:
+            cust = context.user_data.get("selected_customer")
+            txn = context.user_data.get("selected_txn")
+            amount = context.user_data.get("amount")
+            ref_no = context.user_data.get("ref_no")
+            staff = context.user_data.get("staff_name")
+            branch = staff_map[user_id]
+
+            # ஆட்டோ ரசீது எண் (Auto Receipt Number) உருவாக்குவது (எ.கா: NGR-20260821-1045)
+            branch_code = branch[:3].upper()
+            time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+            auto_receipt_no = f"{branch_code}-{time_str}"
+            context.user_data["receipt_no"] = auto_receipt_no
+
+            # கிளைக்கும் வாடிக்கையாளருக்கும் ரசீது எண் காட்டுவது
+            await update.message.reply_text(
+                "✅ *OTP வெற்றிகரமாக உறுதிப்படுத்தப்பட்டது!*\n\n"
+                f"🏷️ **ஆட்டோ ரசீது எண்:** `{auto_receipt_no}`\n"
+                f"கிளை: {branch}\n"
+                f"வாடிக்கையாளர்: {cust.get('Full Name')} ({cust.get('Customer No')})\n"
+                f"வகை: {txn}\n"
+                f"தொகை: ₹{amount}\n\n"
+                "⏳ *தலைமை அலுவலக ஒப்புதலுக்கு (Head Office Approval) அனுப்பி வைக்கப்பட்டுள்ளது.*",
+                parse_mode="Markdown"
+            )
+
+            # தலைமை அலுவலகத்திற்கு (HO) ஒப்புதலுக்காக அனுப்புவது
+            ho_message = (
+                "🔔 *புதிய பரிவர்த்தனை ஒப்புதல் தேவை (HO Approval)*\n\n"
+                f"🏷️ **ரசீது எண்:** `{auto_receipt_no}`\n"
+                f"📍 **கிளை:** {branch}\n"
+                f"👤 **வாடிக்கையாளர்:** {cust.get('Full Name')} ({cust.get('Customer No')})\n"
+                f"📑 **வகை:** {txn}\n"
+                f"💰 **தொகை:** ₹{amount}\n"
+                f"🔖 **குறிப்பு எண்:** {ref_no}\n"
+                f"👨‍💼 **பணியாளர்:** {staff}\n"
+            )
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Approve (ஒப்புதல் அளி)", callback_data=f"app_{auto_receipt_no}"),
+                    InlineKeyboardButton("❌ Reject (நிராகரி)", callback_data=f"rej_{auto_receipt_no}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # தலைமை அலுவலக போட் சாட்டுக்கு அனுப்புவது
+            await context.bot.send_message(
+                chat_id=HEAD_OFFICE_CHAT_ID,
+                text=ho_message,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            
+            context.user_data.clear()
+            await update.message.reply_text("அடுத்த பரிவர்த்தனைக்கு வாடிக்கையாளர் பெயரின் சில எழுத்துகளைத் தேடவும்.")
+        else:
+            await update.message.reply_text("❌ தவறான OTP! சரியான OTP-ஐ மீண்டும் உள்ளிடவும்:")
+
+# தலைமை அலுவலகம் Approve அல்லது Reject செய்வதைக் கையாளுதல்
+async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data_parts = query.data.split("_")
+    action = data_parts[0]
+    receipt_no = data_parts[1]
+
+    if action == "app":
+        await query.edit_message_text(
+            f"{query.message.text}\n\n"
+            "🟢 **நிலை:** தலைமை அலுவலகத்தால் **ஒப்புதல் அளிக்கப்பட்டது (Approved)** ✅",
+            parse_mode="Markdown"
+        )
+        # இங்கே கூகுள் ஷீட்டில் தரவை சேமிக்கும் API கால் கொடுக்கலாம்
+    else:
+        await query.edit_message_text(
+            f"{query.message.text}\n\n"
+            "🔴 **நிலை:** தலைமை அலுவலகத்தால் **நிராகரிக்கப்பட்டது (Rejected)** ❌",
+            parse_mode="Markdown"
+        )
+
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(customer_selected, pattern="^cust_"))
+    app.add_handler(CallbackQueryHandler(category_selected, pattern="^cat_"))
     app.add_handler(CallbackQueryHandler(transaction_selected, pattern="^txn_"))
+    app.add_handler(CallbackQueryHandler(handle_approval, pattern="^(app|rej)_"))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), search_customer))
 
-    print("Bot is running...")
+    print("Bot is running with Head Office Approval System...")
     app.run_polling()
 
 if __name__ == "__main__":
