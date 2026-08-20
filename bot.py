@@ -21,11 +21,13 @@ FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY")
 GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbyLFfJfVJ4yfJo4WnOfxJAZLbcPPTnxVTOxcjX1-W9uzqanPF99fhhHoFQJOKGYEk7Z/exec"
 HEAD_OFFICE_CHAT_ID = "1889072007"
 
+# Cash Out வகைகள் (செலவு - நாம் வாடிக்கையாளருக்குக் கொடுப்பது)
 CASH_OUT_TYPES = [
     "GOLD LOAN", "FD Interest", "RD Interest", "FD Closure", 
     "RD Closure", "GP", "Cash Transfer"
 ]
 
+# Cash In வகைகள் (வரவு - வாடிக்கையாளர் நமக்குத் தருவது)
 CASH_IN_TYPES = [
     "Gold loan Closure", "Gold Loan Interest", "Gold Loan Part Payment", 
     "GS", "Cash Received", "New RD", "New FD", "RD Due"
@@ -95,7 +97,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
-# 1. வாடிக்கையாளர் தேர்வு செய்யப்பட்டவுடன் ஆரம்ப OTP அனுப்புவது
+# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் OTP அனுப்புவது
 async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -114,7 +116,7 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     context.user_data["selected_customer"] = cust
-    context.user_data["transactions_cart"] = []  # பல பரிவர்த்தனைகளைச் சேமிக்க ஒரு கார்ட் (Cart)
+    context.user_data["transactions_cart"] = []
 
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
@@ -140,11 +142,10 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"வாடிக்கையாளர்: *{cust.get('Full Name')}* ({cust.get('Customer No')}) தேர்வு செய்யப்பட்டுள்ளார்.\n"
         f"அவரது பதிவு செய்யப்பட்ட எண்ணிற்கு ({mobile}) **OTP** அனுப்பப்பட்டுள்ளது.\n\n"
-        "பரிவர்த்தனைகளைத் தொடங்க வாடிக்கையாளரிடம் பெற்ற **OTP-ஐ** இங்கே உள்ளிடவும்:",
+        "பரிவர்த்தனையைத் தொடங்க வாடிக்கையாளரிடம் பெற்ற **OTP-ஐ** இங்கே உள்ளிடவும்:",
         parse_mode="Markdown"
     )
 
-# டெக்ஸ்ட் உள்ளீடுகள் (OTP உறுதிப்படுத்தல் -> Ref No -> Staff -> Amount)
 async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -192,18 +193,18 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
         txn = context.user_data.get("selected_txn")
         ref_no = context.user_data.get("ref_no")
         staff = context.user_data.get("staff_name")
+        cat_type = context.user_data.get("selected_category_type") # cashin அல்லது cashout
 
-        # வாடிக்கையாளர் செய்த பரிவர்த்தனையை கார்ட்டில் சேர்ப்பது
         cart = context.user_data.get("transactions_cart", [])
         cart.append({
             "txn_type": txn,
+            "category": cat_type,
             "amount": float(amount),
             "ref_no": ref_no,
             "staff_name": staff
         })
         context.user_data["transactions_cart"] = cart
 
-        # மேலும் பரிவர்த்தனைகள் செய்ய வேண்டுமா அல்லது முடிக்கலாமா எனக் கேட்பது
         context.user_data["step"] = "waiting_for_next_action"
 
         keyboard = [
@@ -213,17 +214,17 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
-            f"✅ பரிவர்த்தனை சேர்க்கப்பட்டது! (தற்போதைய மொத்த பரிவர்த்தனைகள்: {len(cart)})\n\n"
+            f"✅ பரிவர்த்தனை சேர்க்கப்பட்டது! (மொத்த பரிவர்த்தனைகள்: {len(cart)})\n\n"
             "அடுத்து என்ன செய்ய வேண்டும்?",
             reply_markup=reply_markup
         )
 
-# Cash In / Cash Out பிரிவைத் தேர்ந்தெடுத்தல்
 async def category_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     cat_type = query.data.replace("cat_", "")
+    context.user_data["selected_category_type"] = cat_type
     keyboard = []
 
     if cat_type == "cashin":
@@ -249,7 +250,6 @@ async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYP
         "தயவுசெய்து **பரிவர்த்தனை குறிப்பு எண்ணை (Reference Number)** அனுப்பவும்:"
     )
 
-# மேலும் சேர்ப்பதா அல்லது முடிப்பதா என்பதைக் கையாளுதல்
 async def handle_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -267,9 +267,7 @@ async def handle_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "finish":
         cust = context.user_data.get("selected_customer")
         cart = context.user_data.get("transactions_cart", [])
-        branch = context.user_data.get("branch", "Branch") # Safe fallback
         
-        # User ID மூலம் கிளைப் பெயரைக் கண்டறிவது
         staff_map = get_data_from_sheet().get("staff_map", {})
         user_id = str(query.from_user.id)
         branch = staff_map.get(user_id, "Branch")
@@ -278,34 +276,58 @@ async def handle_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("எந்தப் பரிவர்த்தனையும் சேர்க்கப்படவில்லை.")
             return
 
-        # சுருக்கம் மற்றும் மொத்தத் தொகை தயாரித்தல்
-        total_amount = sum(item["amount"] for item in cart)
+        # 1. Cash In மற்றும் Cash Out தொகைகளைக் தனித்தனியாகக் கூட்டுவது
+        cashin_total = sum(item["amount"] for item in cart if item["category"] == "cashin")
+        cashout_total = sum(item["amount"] for item in cart if item["category"] == "cashout")
         
+        # 2. நிலுவைத் தொகையைக் கணக்கிடுதல் (Net Balance)
+        net_diff = cashin_total - cashout_total
+        if net_diff > 0:
+            balance_text = f"₹{net_diff} (வாடிக்கையாளர் செலுத்த வேண்டியது)"
+        elif net_diff < 0:
+            balance_text = f"₹{abs(net_diff)} (வாடிக்கையாளருக்கு நாம் கொடுக்க வேண்டியது)"
+        else:
+            balance_text = "₹0 (சமமாக உள்ளது)"
+
         branch_code = branch[:3].upper()
         time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
         auto_receipt_no = f"{branch_code}-{time_str}"
 
+        # இறுதி OTP உருவாக்குவது
+        final_otp = str(random.randint(1000, 9999))
+
+        # சுருக்கம் தயாரித்தல்
         summary_text = f"🏷️ **ரசீது எண்:** `{auto_receipt_no}`\n"
         summary_text += f"👤 **வாடிக்கையாளர்:** {cust.get('Full Name')} ({cust.get('Customer No')})\n\n"
         summary_text += "📑 **செய்த பரிவர்த்தனைகள்:**\n"
         
         ho_items_desc = ""
         for i, item in enumerate(cart, 1):
-            summary_text += f"{i}. {item['txn_type']} - ₹{item['amount']} (Ref: {item['ref_no']})\n"
-            ho_items_desc += f"- {item['txn_type']}: ₹{item['amount']} (Ref: {item['ref_no']}, Staff: {item['staff_name']})\n"
+            cat_name = "Cash In" if item['category'] == 'cashin' else "Cash Out"
+            summary_text += f"{i}. [{cat_name}] {item['txn_type']} - ₹{item['amount']}\n"
+            ho_items_desc += f"- [{cat_name}] {item['txn_type']}: ₹{item['amount']} (Ref: {item['ref_no']}, Staff: {item['staff_name']})\n"
 
-        summary_text += f"\n💰 **மொத்தத் தொகை:** ₹{total_amount}\n"
+        summary_text += f"\n📥 **மொத்த வரவு (Cash In):** ₹{cashin_total}\n"
+        summary_text += f"📤 **மொத்த செலவு (Cash Out):** ₹{cashout_total}\n"
+        summary_text += f"⚖️ **இறுதி நிலுவை:** {balance_text}\n"
+        summary_text += f"🔑 **உறுதிப்படுத்தல் OTP:** `{final_otp}`\n"
 
-        # வாடிக்கையாளருக்கு SMS மூலம் சுருக்கத்தை அனுப்புவது
+        # வாடிக்கையாளருக்கு நீங்கள் கேட்ட வடிவில் SMS அனுப்புவது
         mobile = str(cust.get("Mobile No", "")).strip()
         if mobile:
+            sms_message = (
+                f"Dear {cust.get('Full Name')}, "
+                f"மொத்த செலுத்துதல்கள் {cashin_total}, "
+                f"பெறுதல்கள் {cashout_total} போக நீங்கள் செலுத்தவேண்டிய/பெறவேண்டிய தொகை {balance_text}. "
+                f"OTP: {final_otp}"
+            )
             url = "https://www.fast2sms.com/dev/bulkV2"
             querystring = {
                 "authorization": FAST2SMS_API_KEY,
                 "route": "dlt",
                 "sender_id": "MTHSEG",
                 "message": "219823",
-                "variables_values": f"{total_amount}|",
+                "variables_values": f"{cashin_total}|{cashout_total}|{net_diff}|{final_otp}|",
                 "numbers": mobile
             }
             try:
@@ -313,7 +335,6 @@ async def handle_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"SMS Error: {e}")
 
-        # கிளைப் பணியாளருக்குக் காட்டுவது
         await query.edit_message_text(
             "✅ *அனைத்துப் பரிவர்த்தனைகளும் முடிக்கப்பட்டன!*\n\n"
             f"{summary_text}\n"
@@ -329,16 +350,14 @@ async def handle_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{ho_items_desc}"
         )
 
-        # ஷீட்டில் சேமிக்கத் தேவையான டேட்டாவை callback_data-ல் சுருக்கமாக அனுப்புவது
         keyboard = [
             [
-                InlineKeyboardButton("✅ Approve", callback_data=f"app_{auto_receipt_no}_{branch}_{cust.get('Customer No')}_{cust.get('Full Name')}_{total_amount}"),
+                InlineKeyboardButton("✅ Approve", callback_data=f"app_{auto_receipt_no}_{branch}_{cust.get('Customer No')}_{cust.get('Full Name')}"),
                 InlineKeyboardButton("❌ Reject", callback_data=f"rej_{auto_receipt_no}")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # கார்ட் முழுவதையும் தலைமை அலுவலக ஒப்புதலுக்காக அனுப்புவது (context-ல் சேமிக்கலாம்)
         context.application.bot_data[auto_receipt_no] = cart
 
         await context.bot.send_message(
@@ -354,7 +373,6 @@ async def handle_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="அடுத்த வாடிக்கையாளரைத் தேட அவரது பெயரின் சில எழுத்துகளைத் தட்டச்சு செய்யவும்."
         )
 
-# தலைமை அலுவலகம் Approve செய்வதைக் கையாளுதல்
 async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -367,12 +385,9 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         branch = data_parts[2]
         cust_no = data_parts[3]
         cust_name = data_parts[4]
-        total_amount = data_parts[5]
 
-        # சேமிக்கப்பட்ட கார்ட் விவரங்களை எடுப்பது
         cart = context.application.bot_data.get(receipt_no, [])
 
-        # ஒவ்வொரு பரிவர்த்தனையையும் கூகுள் ஷீட்டில் தனித்தனியாகப் பதிவிடுவது
         for item in cart:
             payload = {
                 "action": "save_transaction",
@@ -380,7 +395,7 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "branch": branch,
                 "customer_no": cust_no,
                 "customer_name": cust_name,
-                "txn_type": item["txn_type"],
+                "txn_type": f"[{item['category'].upper()}] {item['txn_type']}",
                 "amount": item["amount"],
                 "ref_no": item["ref_no"],
                 "staff_name": item["staff_name"]
@@ -413,7 +428,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_approval, pattern="^(app|rej)_"))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), search_customer))
 
-    print("Bot is running with Multi-Transaction Cart System...")
+    print("Bot is running with Net Balance Summary & Custom SMS...")
     app.run_polling()
 
 if __name__ == "__main__":
