@@ -120,17 +120,16 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-    # Fast2SMS DLT முறை மூலம் SMS அனுப்புவது
+   # Fast2SMS Quick Route முறை மூலம் SMS அனுப்புவது (Template தேவையில்லை)
     mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
+        
+        # Quick Route (route="q") பயன்படுத்துவதால் Template ID, Entity ID தேவையில்லை
         payload = {
-            "route": "dlt",
-            "sender_id": "MTHSEG",
-            "template_id": "1707174401529856506",
-            "variables_values": otp,
+            "route": "q",
+            "message": f"Muthusise Gold OTP: {otp}. Do not share this with anyone.",
             "numbers": mobile,
-            "entity_id": "1701173150196736946"
         }
         headers = {
             'authorization': FAST2SMS_API_KEY,
@@ -138,9 +137,9 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'content-type': "application/json"
         }
         try:
-            print(f"Sending DLT SMS to {mobile} with OTP {otp}...")
+            print(f"Sending Quick SMS to {mobile} with OTP {otp}...")
             response = requests.post(url, json=payload, headers=headers)
-            print("Fast2SMS DLT Response:", response.text)
+            print("Fast2SMS Quick Response:", response.text)
         except Exception as e:
             print(f"SMS Error: {e}")
 
