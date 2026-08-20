@@ -120,12 +120,13 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-   # Fast2SMS மூலம் OTP அனுப்புவது
+  # Fast2SMS மூலம் OTP அனுப்புவது
     mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
+        
+        # Payload-ல் 'authorization' இருக்கக்கூடாது
         payload = {
-            "authorization": FAST2SMS_API_KEY,
             "route": "dlt",
             "sender_id": "MTHSEG",
             "template_id": "1707174401529856506",
@@ -134,15 +135,19 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "numbers": mobile,
             "entity_id": "1701173150196736946"
         }
+        
+        # Authorization Key-ஐ Header-ல் அனுப்ப வேண்டும்
         headers = {
-            'cache-control': "no-cache"
+            'authorization': FAST2SMS_API_KEY,
+            'cache-control': "no-cache",
+            'content-type': "application/json"
         }
+        
         try:
-            # json=payload என்பதற்கு பதிலாக data=payload மற்றும் headers-ஐப் பயன்படுத்துதல்
-            response = requests.post(url, data=payload, headers=headers)
-            print("Fast2SMS Raw Response:", response.text) # இது ரெண்டர் லாக்கில் தெரியும்
+            response = requests.post(url, json=payload, headers=headers)
+            print("Fast2SMS Response:", response.text)
         except Exception as e:
-            print(f"SMS Error Exception: {e}")
+            print(f"SMS Error: {e}")
 
     context.user_data["step"] = "verify_initial_otp"
     
