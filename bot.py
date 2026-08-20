@@ -60,7 +60,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# வாடிக்கையாளரைத் தேடுதல் (சரியான கிளை வாடிக்கையாளர்களை மட்டும் காட்டுவது)
+# வாடிக்கையாளரைத் தேடுதல்
 async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = get_data_from_sheet()
@@ -69,7 +69,6 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in staff_map:
         return
 
-    # டெக்ஸ்ட் ஸ்டெப் நடந்துகொண்டிருந்தால் அதற்கு அனுப்பவும்
     if context.user_data.get("step"):
         await handle_text_inputs(update, context)
         return
@@ -78,7 +77,6 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = update.message.text.strip().lower()
     customers_db = data.get("customers", [])
 
-    # குறிப்பிட்ட கிளை வாடிக்கையாளர்களை மட்டும் தேடுதல் (Branch strict matching)
     matched_customers = [
         c for c in customers_db 
         if str(c.get("Branch", "")).strip().lower() == branch.lower() and query_text in str(c.get("Full Name", "")).strip().lower()
@@ -98,7 +96,7 @@ async def search_customer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("சரியான வாடிக்கையாளரைத் தேர்வு செய்யவும்:", reply_markup=reply_markup)
 
-# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் OTP அனுப்பிவிட்டு, OTP உள்ளிடக் கேட்பது
+# வாடிக்கையாளர் தேர்வு செய்யப்பட்டதும் உங்கள் DLT முறைப்படி OTP அனுப்புவது
 async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -110,34 +108,39 @@ async def customer_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     branch = staff_map.get(user_id, "")
 
     customers_db = data.get("customers", [])
-    
-    # கிளை மற்றும் வாடிக்கையாளர் எண் இரண்டையும் சரிபார்த்து சரியான வாடிக்கையாளரைத் தேர்ந்தெடுப்பது
     cust = next((c for c in customers_db if str(c.get("Customer No")) == cust_no and str(c.get("Branch", "")).strip().lower() == branch.lower()), None)
 
     if not cust:
         await query.edit_message_text("பிழை: வாடிக்கையாளர் விவரங்கள் கிடைக்கவில்லை.")
         return
 
-    # Session-ல் வாடிக்கையாளர் விவரங்களை சேமித்தல்
     context.user_data["selected_customer"] = cust
 
-    # OTP உருவாக்குதல்
+    # 4 இலக்க OTP உருவாக்குதல்
     otp = str(random.randint(1000, 9999))
     context.user_data["generated_otp"] = otp
 
-    # Fast2SMS மூலம் OTP அனுப்புவது
-    mobile = str(cust.get("Mobile No", ""))
+    # உங்கள் DLT விவரங்களுடன் Fast2SMS அனுப்புதல்
+    mobile = str(cust.get("Mobile No", "")).strip()
     if mobile:
         url = "https://www.fast2sms.com/dev/bulkV2"
         payload = {
             "authorization": FAST2SMS_API_KEY,
-            "route": "otp",
+            "route": "dlt",
+            "sender_id": "MTHSEG",
+            "template_id": "1707174401529856506",
+            "message": otp,  # டெம்ப்ளேட்டில் உள்ள மாறிலிக்கு OTP செல்வதற்காக
             "variables_values": otp,
             "numbers": mobile,
+            "entity_id": "1701173150196736946"
         }
-        headers = {'cache-control': "no-cache"}
+        headers = {
+            'cache-control': "no-cache",
+            'content-type': "application/json"
+        }
         try:
-            requests.post(url, data=payload, headers=headers)
+            response = requests.post(url, json=payload, headers=headers)
+            print("Fast2SMS Response:", response.text) # Render Logs-ல் பார்க்க
         except Exception as e:
             print(f"SMS Error: {e}")
 
@@ -162,7 +165,6 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
     step = context.user_data.get("step")
     text = update.message.text.strip()
 
-    # 1. ஆரம்ப OTP சரிபார்ப்பு
     if step == "verify_initial_otp":
         entered_otp = text
         correct_otp = context.user_data.get("generated_otp")
@@ -217,7 +219,7 @@ async def handle_text_inputs(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.clear()
         await update.message.reply_text("அடுத்த பரிவர்த்தனைக்கு வாடிக்கையாளர் பெயரின் சில எழுத்துகளைத் தேடவும்.")
 
-# பரிவர்த்தனை வகை பட்டன் மூலம் தேர்வு செய்யப்படும்போது
+# பரிவர்த்தனை வகை தேர்வு செய்யப்படும்போது
 async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -231,7 +233,6 @@ async def transaction_selected(update: Update, context: ContextTypes.DEFAULT_TYP
         "தயவுசெய்து **பரிவர்த்தனை குறிப்பு எண்ணை (Transaction Reference Number)** அனுப்பவும்:"
     )
 
-# மெயின் ஆப் இயக்க முறை
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
